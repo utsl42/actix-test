@@ -1,0 +1,48 @@
+<html>
+
+<body>
+    <h1>{{ name.common }}</h1>
+    <h3>{{ name.official }}</h3>
+    <table>
+        <tr>
+            <th>Region</th>
+            <td>{{region}}</td>
+        </tr>
+        <tr>
+            <th>Subregion</th>
+            <td>{{subregion}}</td>
+        </tr>
+        <tr>
+            <th>Capital</th>
+            <td>{{capital.0}}</td>
+        </tr>
+        <tr>
+            <th>TLD</th>
+            <td>{{tld.0}}</td>
+        </tr>
+        <tr>
+            <th>CC</th>
+            <td>+{{callingCode.0}}</td>
+        </tr>
+        <tr>
+            <th>Map</th>
+            <td>
+                <a href="https://www.google.com/maps/@{{latlng.0}},{{latlng.1}},7z">link</a>
+            </td>
+        </tr>
+        <tr>
+            <th>Borders:</th>
+        </tr>
+        {% for country in borders %}
+        <tr>
+            <th></th>
+            <td>
+                <a href="{{ country }}">{{ country }}</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tr>
+    </table>
+</body>
+
+</html>

@@ -1,0 +1,41 @@
+[package]
+name = "actix-test"
+version = "0.1.0"
+authors = ["Nathan Hawkins <utsl@utsl.org>"]
+build = "build.rs"
+
+[dependencies]
+actix = "0.5.5"
+actix-web = "0.4.9"
+http = "^0.1.5"
+
+futures = "0.1"
+lazy_static = "1.0.0"
+serde = "1.0"
+serde_json = "1.0"
+serde_yaml = "0.7"
+serde_derive = "1.0"
+serde_cbor = "0.8"
+serde_urlencoded = "0.5.1"
+
+mtbl = "0.2.1"
+
+slog = "2.1"
+slog-async = "2.2"
+slog-term = "2.3"
+slog-json = "2.2"
+
+tera = "^0.11"
+thread-id = "3.2.0"
+
+
+[build-dependencies]
+vergen = "*"
+
+[[bin]]
+name = "server"
+path = "src/server/main.rs"
+
+[[bin]]
+name = "builder"
+path = "src/builder/main.rs"
