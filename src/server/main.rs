@@ -117,7 +117,7 @@ fn start_http(mt_addr: actix::Addr<Syn, MtblExecutor>, logger: slog::Logger) {
             mt: mt_addr.clone(),
             logger: logger.clone(),
         }).resource("/{name}", |r| r.method(Method::GET).a(index))
-    }).bind("127.0.0.1:8080")
+    }).bind("0.0.0.0:63333")
         .unwrap()
         .start();
     sys.run();
