@@ -9,7 +9,6 @@ extern crate serde_cbor;
 extern crate serde_json;
 extern crate serde_yaml;
 
-extern crate thread_id;
 use actix::*;
 use actix::actors::signal;
 use actix_web::*;
@@ -36,18 +35,32 @@ use std::sync::Arc;
 use http::header;
 
 mod mt;
+mod logger;
 
 use mt::{GetCountry, MtblExecutor};
+use logger::ThreadLocalDrain;
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
-thread_local!(static TL_THREAD_ID: usize = thread_id::get());
 
 /// State with MtblExecutor address
 struct State {
     mt: actix::Addr<Syn, MtblExecutor>,
     logger: slog::Logger,
+}
+
+fn start_http(mt_addr: actix::Addr<Syn, MtblExecutor>, logger: slog::Logger) {
+    let sys: actix::SystemRunner = actix::System::new("mtbl-example");
+    let _addr = HttpServer::new(move || {
+        Application::with_state(State {
+            mt: mt_addr.clone(),
+            logger: logger.clone(),
+        }).resource("/{name}", |r| r.method(Method::GET).a(index))
+    }).bind("0.0.0.0:63333")
+        .unwrap()
+        .start();
+    sys.run();
 }
 
 lazy_static! {
@@ -58,10 +71,39 @@ lazy_static! {
     };
 }
 
+// Async request handler
+fn index(req: HttpRequest<State>) -> Box<Future<Item=HttpResponse, Error=Error>> {
+    let name = &req.match_info()["name"];
+    let _guard = logger::FnGuard::new(req.state().logger.clone(),
+                                      o!("name"=>name.to_owned()),
+                                      "index");
+    let accept_hdr = get_accept_str(req.headers().get(header::ACCEPT));
+
+    //info!(logger, "index called");
+    let movable_logger = req.state().logger.new(o!());
+    req.state()
+        .mt
+        .send(GetCountry {
+            name: name.to_owned(),
+        })
+        .from_err()
+        .and_then(move |res| match res {
+            Ok(country) => match country {
+                Some(c) => make_response(movable_logger, accept_hdr, c),
+                None => Ok(httpcodes::HTTPNotFound.into()),
+            },
+            Err(_) => Ok(httpcodes::HTTPInternalServerError.into()),
+        })
+        .responder()
+}
+
+
 fn make_response(
+    log: slog::Logger,
     accept: Option<String>,
     object: serde_cbor::Value,
 ) -> std::result::Result<actix_web::HttpResponse, actix_web::Error> {
+    let _guard = logger::FnGuard::new(log, o!(), "make_response");
     let mut res = httpcodes::HttpOk.build();
     if let Some(value) = accept {
         let hstr = value.as_str();
@@ -87,76 +129,43 @@ fn get_accept_str(hdr: Option<&http::header::HeaderValue>) -> Option<String> {
     }
 }
 
-/// Async request handler
-fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    let name = &req.match_info()["name"];
-    let logger = req.state().logger.new(o!("name"=>name.to_owned()));
-    let accept_hdr = get_accept_str(req.headers().get(header::ACCEPT));
-
-    info!(logger, "index called");
-    req.state()
-        .mt
-        .send(GetCountry {
-            name: name.to_owned(),
-        })
-        .from_err()
-        .and_then(move |res| match res {
-            Ok(country) => match country {
-                Some(c) => make_response(accept_hdr, c),
-                None => Ok(httpcodes::HTTPNotFound.into()),
-            },
-            Err(_) => Ok(httpcodes::HTTPInternalServerError.into()),
-        })
-        .responder()
-}
-
-fn start_http(mt_addr: actix::Addr<Syn, MtblExecutor>, logger: slog::Logger) {
-    let sys = actix::System::new("mtbl-example");
-    let _addr = HttpServer::new(move || {
-        Application::with_state(State {
-            mt: mt_addr.clone(),
-            logger: logger.clone(),
-        }).resource("/{name}", |r| r.method(Method::GET).a(index))
-    }).bind("0.0.0.0:63333")
-        .unwrap()
-        .start();
-    sys.run();
-}
-
 fn main() {
-    let decorator = slog_term::TermDecorator::new().build();
-    let tdrain = slog_term::FullFormat::new(decorator).build().fuse();
+    //--- set up slog
 
+    // set up terminal logging
+    let decorator = slog_term::TermDecorator::new().build();
+    let term_drain = slog_term::CompactFormat::new(decorator).build().fuse();
+
+    // json log file
     let logfile = std::fs::File::create("/tmp/actix-test.log").unwrap();
-    let sdrain = slog_json::Json::new(logfile)
+    let json_drain = slog_json::Json::new(logfile)
         .add_default_keys()
+        // include source code location
         .add_key_value(o!("place" =>
            slog::FnValue(move |info| {
                format!("{}::({}:{})",
                        info.module(),
                        info.file(),
                        info.line(),
-                )})))
+                )}),
+                "sha"=>short_sha()))
         .build()
         .fuse();
 
+    // duplicate log to both terminal and json file
+    let dup_drain = slog::Duplicate::new(json_drain, term_drain);
+    // make it async
+    let async_drain = slog_async::Async::new(dup_drain.fuse()).build();
+    // and add thread local logging
     let log = slog::Logger::root(
-        std::sync::Mutex::new(slog::Duplicate::new(sdrain, tdrain)).fuse(),
-        o!("version" => "0.1.0"),
+        ThreadLocalDrain { drain: async_drain }.fuse(), o!(),
     );
 
-    let logger = log.new(o!("host"=>"localhost",
-        "port"=>8080,
-        "thread"=>slog::FnValue(|_| {
-            TL_THREAD_ID.with(|id| { *id })
-        }),
-        "sha"=>short_sha(),
-        ));
-
+    //--- end of slog setup
     let sys = actix::System::new("mtbl-example");
-    let _: actix::Addr<Syn, _> = signal::DefaultSignalsHandler::start_default();
 
-    let mt_logger = logger.new(o!("thread_name"=>"mtbl"));
+    // set up MTBL lookup thread
+    let mt_logger = log.new(o!("thread_name"=>"mtbl"));
     let reader = Arc::new(mtbl::Reader::open_from_path("countries.mtbl").unwrap());
     // Start mtbl executor actors
     let addr = SyncArbiter::start(3, move || MtblExecutor {
@@ -164,11 +173,14 @@ fn main() {
         logger: mt_logger.new(o!()),
     });
 
-    let http_logger = logger.new(o!("thead_name"=>"http"));
-    // Start http server
+    // Start http server in its own thread
+    let http_logger = log.new(o!("thread_name"=>"http"));
     thread::spawn(move || {
         start_http(addr, http_logger);
     });
-    info!(logger, "Started http server");
+    info!(log, "Started http server");
+
+    // handle signals
+    let _: actix::Addr<Syn, _> = signal::DefaultSignalsHandler::start_default();
     let _ = sys.run();
 }

@@ -6,9 +6,9 @@ use actix::prelude::*;
 use slog;
 
 use std;
-// use std::sync::Arc;
-// use std::sync::Mutex;
 use mtbl::Read;
+
+use logger;
 
 /// This is mtbl executor actor. We are going to run 3 of them in parallel.
 pub struct MtblExecutor {
@@ -16,7 +16,7 @@ pub struct MtblExecutor {
     pub logger: slog::Logger,
 }
 
-/// This is only message that this actor can handle, but it is easy to extend number of
+/// This is only message that this actor can handle, but it is easy to extend with more
 /// messages.
 pub struct GetCountry {
     pub name: String,
@@ -37,7 +37,8 @@ impl Handler<GetCountry> for MtblExecutor {
     type Result = MtblResult;
 
     fn handle(&mut self, msg: GetCountry, _: &mut Self::Context) -> Self::Result {
-        info!(self.logger, "retrieving country"; "name"=>msg.name.clone());
+        let guard = logger::FnGuard::new(self.logger.clone(),o!("name"=>msg.name.clone()), "GetCountry");
+        info!(guard, "retrieving country");
         let mr = &self.reader;
         if let Some(ref val) = mr.get(msg.name) {
             let cbor = serde_cbor::from_slice(&val).unwrap();

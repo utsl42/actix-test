@@ -7,7 +7,7 @@ build = "build.rs"
 [dependencies]
 actix = "0.5.5"
 actix-web = "0.4.9"
-http = "^0.1.5"
+http = "0.1"
 
 futures = "0.1"
 lazy_static = "1.0.0"
