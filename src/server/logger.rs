@@ -45,20 +45,24 @@ impl FnGuard {
             T: SendSyncRefUnwindSafeKV + 'static
     {
         let new_logger = logger.new(values);
-        info!(new_logger, "[Enter] {}", function_name);
+        info!(new_logger, "[Enter]"; o!("function_name"=>function_name));
         FnGuard {
             function_name,
             logger: new_logger,
         }
     }
 
+    pub fn sub_guard(&self, function_name: &'static str) -> FnGuard {
+        FnGuard::new(self.logger.clone(), o!(), function_name)
+    }
+
     pub fn log(&self, record: &Record) {
-        self.logger.log(record);
+        self.logger.log(record)
     }
 }
 
 impl Drop for FnGuard {
     fn drop(&mut self) {
-        info!(self.logger, "[Exit] {}", self.function_name);
+        info!(self.logger, "[Exit]"; o!("function_name"=>self.function_name))
     }
 }

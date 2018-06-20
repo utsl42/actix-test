@@ -9,8 +9,8 @@ extern crate serde_cbor;
 extern crate serde_json;
 extern crate serde_yaml;
 
-use actix::*;
 use actix::actors::signal;
+use actix::*;
 use actix_web::*;
 
 use futures::future::Future;
@@ -29,20 +29,19 @@ extern crate lazy_static;
 #[macro_use]
 extern crate tera;
 
-use slog::Drain;
-use std::thread;
-use std::sync::Arc;
 use http::header;
+use slog::Drain;
+use std::sync::Arc;
+use std::thread;
 
-mod mt;
 mod logger;
+mod mt;
 
-use mt::{GetCountry, MtblExecutor};
 use logger::ThreadLocalDrain;
+use mt::{GetCountry, MtblExecutor};
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
 
 /// State with MtblExecutor address
 struct State {
@@ -72,15 +71,16 @@ lazy_static! {
 }
 
 // Async request handler
-fn index(req: HttpRequest<State>) -> Box<Future<Item=HttpResponse, Error=Error>> {
+fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let name = &req.match_info()["name"];
-    let _guard = logger::FnGuard::new(req.state().logger.clone(),
-                                      o!("name"=>name.to_owned()),
-                                      "index");
-    let accept_hdr = get_accept_str(req.headers().get(header::ACCEPT));
+    let guard = logger::FnGuard::new(
+        req.state().logger.clone(),
+        o!("name"=>name.to_owned()),
+        "index",
+    );
+    let accept_hdr =
+        get_accept_str(req.headers().get(header::ACCEPT));
 
-    //info!(logger, "index called");
-    let movable_logger = req.state().logger.new(o!());
     req.state()
         .mt
         .send(GetCountry {
@@ -89,7 +89,7 @@ fn index(req: HttpRequest<State>) -> Box<Future<Item=HttpResponse, Error=Error>>
         .from_err()
         .and_then(move |res| match res {
             Ok(country) => match country {
-                Some(c) => make_response(movable_logger, accept_hdr, c),
+                Some(c) => make_response(guard, accept_hdr, c),
                 None => Ok(httpcodes::HTTPNotFound.into()),
             },
             Err(_) => Ok(httpcodes::HTTPInternalServerError.into()),
@@ -97,35 +97,30 @@ fn index(req: HttpRequest<State>) -> Box<Future<Item=HttpResponse, Error=Error>>
         .responder()
 }
 
-
 fn make_response(
-    log: slog::Logger,
-    accept: Option<String>,
+    log: logger::FnGuard,
+    accept: String,
     object: serde_cbor::Value,
 ) -> std::result::Result<actix_web::HttpResponse, actix_web::Error> {
-    let _guard = logger::FnGuard::new(log, o!(), "make_response");
+    let _guard = log.sub_guard("make_response");
     let mut res = httpcodes::HttpOk.build();
-    if let Some(value) = accept {
-        let hstr = value.as_str();
-        if hstr == "application/yaml" {
-            return Ok(res.content_type("application/yaml")
-                .body(serde_yaml::to_string(&object).unwrap())?);
-        }
-        if hstr == "application/json" {
-            return res.json(&object);
-        }
+    match accept.as_str() {
+        "application/yaml" => Ok(res.content_type("application/yaml")
+            .body(serde_yaml::to_string(&object).unwrap())?),
+        "application/json" => res.json(&object),
+        _ => Ok(res.content_type("text/html")
+                .body(TEMPLATES.render("country.html", &object).unwrap())?),
     }
-    Ok(res.content_type("text/html")
-        .body(TEMPLATES.render("country.html", &object).unwrap())?)
 }
 
-fn get_accept_str(hdr: Option<&http::header::HeaderValue>) -> Option<String> {
+fn get_accept_str(hdr: Option<&http::header::HeaderValue>) -> String {
+    let html = "text/html".to_string();
     match hdr {
         Some(h) => match h.to_str() {
-            Ok(st) => Some(st.to_string()),
-            _ => None,
+            Ok(st) => st.to_string(),
+            _ => html,
         },
-        None => None,
+        None => html,
     }
 }
 
@@ -157,9 +152,7 @@ fn main() {
     // make it async
     let async_drain = slog_async::Async::new(dup_drain.fuse()).build();
     // and add thread local logging
-    let log = slog::Logger::root(
-        ThreadLocalDrain { drain: async_drain }.fuse(), o!(),
-    );
+    let log = slog::Logger::root(ThreadLocalDrain { drain: async_drain }.fuse(), o!());
 
     //--- end of slog setup
     let sys = actix::System::new("mtbl-example");

@@ -1,9 +1,9 @@
 extern crate mtbl;
 extern crate serde_cbor;
 extern crate serde_json;
-use std::io;
-use std::fs::File;
 use mtbl::{Sorter, Write};
+use std::fs::File;
+use std::io;
 
 // Change the alias to `Box<error::Error>`.
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
