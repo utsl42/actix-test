@@ -1,43 +1,27 @@
 //! Actix web mtbl example
 
-extern crate actix;
-extern crate actix_web;
-
-extern crate futures;
-extern crate serde;
-extern crate serde_cbor;
-extern crate serde_json;
-extern crate serde_yaml;
-
 use actix::actors::signal;
-use actix::*;
-use actix_web::http;
-use actix_web::*;
-
+use actix::prelude::*;
+use actix_web::{http, App, Error, HttpRequest, HttpResponse};
+use futures;
 use futures::future::Future;
-
-#[macro_use]
-extern crate slog;
-extern crate slog_async;
-extern crate slog_json;
-extern crate slog_term;
-
-extern crate mtbl;
-
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate tera;
-
-use http::header;
+use lazy_static::lazy_static;
+use mtbl;
+use serde_cbor;
+use serde_yaml;
+use slog;
 use slog::Drain;
+use slog::{info, o};
+use slog_async;
+use slog_term;
 use std::sync::Arc;
+use tera::compile_templates;
 
 mod logger;
 mod mt;
 
-use logger::ThreadLocalDrain;
-use mt::{GetCountry, MtblExecutor};
+use crate::logger::ThreadLocalDrain;
+use crate::mt::{GetCountry, MtblExecutor};
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
@@ -70,14 +54,14 @@ lazy_static! {
 }
 
 // Async request handler
-fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn index(req: HttpRequest<State>) -> impl Future<Item = HttpResponse, Error = Error> {
     let name = &req.match_info()["name"];
     let guard = logger::FnGuard::new(
         req.state().logger.clone(),
         o!("name"=>name.to_owned()),
         "index",
     );
-    let accept_hdr = get_accept_str(req.headers().get(header::ACCEPT));
+    let accept_hdr = get_accept_str(req.headers().get(http::header::ACCEPT));
 
     req.state()
         .mt
@@ -92,7 +76,6 @@ fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Err
             },
             Err(_) => Ok(HttpResponse::InternalServerError().finish()),
         })
-        .responder()
 }
 
 fn make_response(

@@ -1,12 +1,12 @@
-extern crate mtbl;
-extern crate serde_cbor;
-extern crate serde_json;
+use mtbl;
 use mtbl::{Sorter, Write};
+use serde_cbor;
+use serde_json;
 use std::fs::File;
 use std::io;
 
 // Change the alias to `Box<error::Error>`.
-type Result<T> = std::result::Result<T, Box<std::error::Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
     read_file().unwrap();

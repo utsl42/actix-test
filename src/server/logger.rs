@@ -1,5 +1,5 @@
-extern crate slog;
-extern crate thread_id;
+use slog;
+use thread_id;
 
 use slog::*;
 use std::result;
@@ -21,7 +21,11 @@ where
     type Ok = ();
     type Err = Never;
 
-    fn log(&self, record: &Record, values: &OwnedKVList) -> result::Result<Self::Ok, Self::Err> {
+    fn log(
+        &self,
+        record: &Record<'_>,
+        values: &OwnedKVList,
+    ) -> result::Result<Self::Ok, Self::Err> {
         let chained = OwnedKVList::from(OwnedKV((
             SingleKV("thread", TL_THREAD_ID.with(|id| *id)),
             values.clone(),
@@ -53,7 +57,7 @@ impl FnGuard {
         FnGuard::new(self.logger.clone(), o!(), function_name)
     }
 
-    pub fn log(&self, record: &Record) {
+    pub fn log(&self, record: &Record<'_>) {
         self.logger.log(record)
     }
 }

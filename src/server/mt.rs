@@ -1,14 +1,12 @@
 //! mtbl executor actor
-extern crate mtbl;
-extern crate serde_cbor;
 
 use actix::prelude::*;
-use slog;
-
 use mtbl::Read;
+use serde_cbor;
+use slog::{info, o};
 use std;
 
-use logger;
+use crate::logger;
 
 /// This is mtbl executor actor. We are going to run 3 of them in parallel.
 pub struct MtblExecutor {
@@ -22,8 +20,7 @@ pub struct GetCountry {
     pub name: String,
 }
 
-type MtblResult =
-    std::result::Result<Option<serde_cbor::value::Value>, Box<std::error::Error + Send>>;
+type MtblResult = std::result::Result<Option<serde_cbor::value::Value>, serde_cbor::error::Error>;
 
 impl Message for GetCountry {
     type Result = MtblResult;
@@ -45,9 +42,9 @@ impl Handler<GetCountry> for MtblExecutor {
         info!(guard, "retrieving country");
         let mr = &self.reader;
         if let Some(ref val) = mr.get(msg.name) {
-            let cbor = serde_cbor::from_slice(&val).unwrap();
-            return Ok(cbor);
+            serde_cbor::from_slice(&val)
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 }
