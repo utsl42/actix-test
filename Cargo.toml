@@ -5,8 +5,8 @@ authors = ["Nathan Hawkins <utsl@utsl.org>"]
 build = "build.rs"
 
 [dependencies]
-actix = "0.5.5"
-actix-web = "0.4.9"
+actix = "0.7.9"
+actix-web = "0.7.18"
 http = "0.1"
 
 futures = "0.1"

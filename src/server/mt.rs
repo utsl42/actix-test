@@ -5,8 +5,8 @@ extern crate serde_cbor;
 use actix::prelude::*;
 use slog;
 
-use std;
 use mtbl::Read;
+use std;
 
 use logger;
 
@@ -37,7 +37,11 @@ impl Handler<GetCountry> for MtblExecutor {
     type Result = MtblResult;
 
     fn handle(&mut self, msg: GetCountry, _: &mut Self::Context) -> Self::Result {
-        let guard = logger::FnGuard::new(self.logger.clone(),o!("name"=>msg.name.clone()), "GetCountry");
+        let guard = logger::FnGuard::new(
+            self.logger.clone(),
+            o!("name"=>msg.name.clone()),
+            "GetCountry",
+        );
         info!(guard, "retrieving country");
         let mr = &self.reader;
         if let Some(ref val) = mr.get(msg.name) {

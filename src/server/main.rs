@@ -11,6 +11,7 @@ extern crate serde_yaml;
 
 use actix::actors::signal;
 use actix::*;
+use actix_web::http;
 use actix_web::*;
 
 use futures::future::Future;
@@ -21,7 +22,6 @@ extern crate slog_async;
 extern crate slog_json;
 extern crate slog_term;
 
-extern crate http;
 extern crate mtbl;
 
 #[macro_use]
@@ -32,7 +32,6 @@ extern crate tera;
 use http::header;
 use slog::Drain;
 use std::sync::Arc;
-use std::thread;
 
 mod logger;
 mod mt;
@@ -45,21 +44,21 @@ include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
 /// State with MtblExecutor address
 struct State {
-    mt: actix::Addr<Syn, MtblExecutor>,
+    mt: actix::Addr<MtblExecutor>,
     logger: slog::Logger,
 }
 
-fn start_http(mt_addr: actix::Addr<Syn, MtblExecutor>, logger: slog::Logger) {
-    let sys: actix::SystemRunner = actix::System::new("mtbl-example");
-    let _addr = HttpServer::new(move || {
-        Application::with_state(State {
+fn start_http(mt_addr: actix::Addr<MtblExecutor>, logger: slog::Logger) {
+    actix_web::server::HttpServer::new(move || {
+        App::with_state(State {
             mt: mt_addr.clone(),
             logger: logger.clone(),
-        }).resource("/{name}", |r| r.method(Method::GET).a(index))
-    }).bind("0.0.0.0:63333")
-        .unwrap()
-        .start();
-    sys.run();
+        })
+        .resource("/{name}", |r| r.method(http::Method::GET).with_async(index))
+    })
+    .bind("0.0.0.0:63333")
+    .unwrap()
+    .start();
 }
 
 lazy_static! {
@@ -78,8 +77,7 @@ fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Err
         o!("name"=>name.to_owned()),
         "index",
     );
-    let accept_hdr =
-        get_accept_str(req.headers().get(header::ACCEPT));
+    let accept_hdr = get_accept_str(req.headers().get(header::ACCEPT));
 
     req.state()
         .mt
@@ -90,9 +88,9 @@ fn index(req: HttpRequest<State>) -> Box<Future<Item = HttpResponse, Error = Err
         .and_then(move |res| match res {
             Ok(country) => match country {
                 Some(c) => make_response(guard, accept_hdr, c),
-                None => Ok(httpcodes::HTTPNotFound.into()),
+                None => Ok(HttpResponse::NotFound().finish()),
             },
-            Err(_) => Ok(httpcodes::HTTPInternalServerError.into()),
+            Err(_) => Ok(HttpResponse::InternalServerError().finish()),
         })
         .responder()
 }
@@ -103,13 +101,15 @@ fn make_response(
     object: serde_cbor::Value,
 ) -> std::result::Result<actix_web::HttpResponse, actix_web::Error> {
     let _guard = log.sub_guard("make_response");
-    let mut res = httpcodes::HttpOk.build();
+    let mut res = HttpResponse::Ok();
     match accept.as_str() {
-        "application/yaml" => Ok(res.content_type("application/yaml")
-            .body(serde_yaml::to_string(&object).unwrap())?),
-        "application/json" => res.json(&object),
-        _ => Ok(res.content_type("text/html")
-                .body(TEMPLATES.render("country.html", &object).unwrap())?),
+        "application/yaml" => Ok(res
+            .content_type("application/yaml")
+            .body(serde_yaml::to_string(&object).unwrap())),
+        "application/json" => Ok(res.json(&object)),
+        _ => Ok(res
+            .content_type("text/html")
+            .body(TEMPLATES.render("country.html", &object).unwrap())),
     }
 }
 
@@ -143,7 +143,7 @@ fn main() {
                        info.file(),
                        info.line(),
                 )}),
-                "sha"=>short_sha()))
+                "sha"=>VERGEN_SHA_SHORT))
         .build()
         .fuse();
 
@@ -155,25 +155,22 @@ fn main() {
     let log = slog::Logger::root(ThreadLocalDrain { drain: async_drain }.fuse(), o!());
 
     //--- end of slog setup
-    let sys = actix::System::new("mtbl-example");
+    actix::System::run(move || {
+        // set up MTBL lookup thread
+        let mt_logger = log.new(o!("thread_name"=>"mtbl"));
+        let reader = Arc::new(mtbl::Reader::open_from_path("countries.mtbl").unwrap());
+        // Start mtbl executor actors
+        let addr = SyncArbiter::start(3, move || MtblExecutor {
+            reader: reader.clone(),
+            logger: mt_logger.new(o!()),
+        });
 
-    // set up MTBL lookup thread
-    let mt_logger = log.new(o!("thread_name"=>"mtbl"));
-    let reader = Arc::new(mtbl::Reader::open_from_path("countries.mtbl").unwrap());
-    // Start mtbl executor actors
-    let addr = SyncArbiter::start(3, move || MtblExecutor {
-        reader: reader.clone(),
-        logger: mt_logger.new(o!()),
-    });
-
-    // Start http server in its own thread
-    let http_logger = log.new(o!("thread_name"=>"http"));
-    thread::spawn(move || {
+        // Start http server in its own thread
+        let http_logger = log.new(o!("thread_name"=>"http"));
         start_http(addr, http_logger);
-    });
-    info!(log, "Started http server");
+        info!(log, "Started http server");
 
-    // handle signals
-    let _: actix::Addr<Syn, _> = signal::DefaultSignalsHandler::start_default();
-    let _ = sys.run();
+        // handle signals
+        let _ = signal::DefaultSignalsHandler::start_default();
+    });
 }

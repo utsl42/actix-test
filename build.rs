@@ -1,8 +1,7 @@
 extern crate vergen;
-use vergen::vergen;
 
 fn main() {
-    let flags = vergen::OutputFns::all();
+    let flags = vergen::ConstantsFlags::all();
     // Generate the version.rs file in the Cargo OUT_DIR.
-    assert!(vergen(flags).is_ok());
+    assert!(vergen::generate_version_rs(flags).is_ok());
 }
