@@ -9,7 +9,7 @@ edition = "2018"
 actix = "0.7.9"
 actix-web = "0.7.18"
 http = "0.1"
-
+juniper = "0.11"
 futures = "0.1"
 lazy_static = "1.0.0"
 serde = "1.0"

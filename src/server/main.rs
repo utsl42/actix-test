@@ -2,9 +2,13 @@
 
 use actix::actors::signal;
 use actix::prelude::*;
-use actix_web::{http, App, Error, HttpRequest, HttpResponse};
+use actix_web::{
+    http, middleware::cors::Cors, App, AsyncResponder, Error, FutureResponse, HttpRequest,
+    HttpResponse, Json,
+};
 use futures;
 use futures::future::Future;
+use juniper;
 use lazy_static::lazy_static;
 use mtbl;
 use serde_cbor;
@@ -38,7 +42,19 @@ fn start_http(mt_addr: actix::Addr<MtblExecutor>, logger: slog::Logger) {
             mt: mt_addr.clone(),
             logger: logger.clone(),
         })
-        .resource("/{name}", |r| r.method(http::Method::GET).with_async(index))
+        .configure(|app| {
+            Cors::for_app(app)
+                .allowed_origin("http://localhost:63333")
+                .allowed_methods(vec!["GET", "POST"])
+                .allowed_header(http::header::CONTENT_TYPE)
+                .max_age(3600)
+                .resource("/graphql", |r| {
+                    r.method(http::Method::POST).with(graphql);
+                })
+                .resource("/graphiql", |r| r.method(http::Method::GET).h(graphiql))
+                .resource("/{name}", |r| r.method(http::Method::GET).with_async(index))
+                .register()
+        })
     })
     .bind("0.0.0.0:63333")
     .unwrap()
@@ -107,6 +123,26 @@ fn get_accept_str(hdr: Option<&http::header::HeaderValue>) -> String {
     }
 }
 
+fn graphiql(_req: &HttpRequest<State>) -> Result<HttpResponse, Error> {
+    let html = juniper::graphiql::graphiql_source("http://localhost:63333/graphql");
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html))
+}
+
+fn graphql((st, data): (actix_web::State<State>, Json<mt::GraphQLData>)) -> FutureResponse<HttpResponse> {
+    st.mt
+        .send(data.0)
+        .from_err()
+        .and_then(|res| match res {
+            Ok(user) => Ok(HttpResponse::Ok()
+                .content_type("application/json")
+                .body(user)),
+            Err(_) => Ok(HttpResponse::InternalServerError().into()),
+        })
+        .responder()
+}
+
 fn main() {
     //--- set up slog
 
@@ -143,9 +179,8 @@ fn main() {
         let mt_logger = log.new(o!("thread_name"=>"mtbl"));
         let reader = Arc::new(mtbl::Reader::open_from_path("countries.mtbl").unwrap());
         // Start mtbl executor actors
-        let addr = SyncArbiter::start(3, move || MtblExecutor {
-            reader: reader.clone(),
-            logger: mt_logger.new(o!()),
+        let addr = SyncArbiter::start(3, move || {
+            MtblExecutor::new(reader.clone(), mt_logger.new(o!()))
         });
 
         // Start http server in its own thread
