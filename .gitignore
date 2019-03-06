@@ -3,5 +3,5 @@
 .DS_Store
 target
 countries.json
-countries.mtbl
+countries.db
 actix-test.iml

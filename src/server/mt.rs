@@ -1,10 +1,9 @@
-//! mtbl executor actor
+//! sled executor actor
 
 use actix::prelude::*;
 use juniper;
 use juniper::http::GraphQLRequest;
 use juniper::GraphQLObject;
-use mtbl::Read;
 use serde_cbor;
 use serde_derive::{Deserialize, Serialize};
 use slog::{info, error, o};
@@ -67,16 +66,16 @@ pub fn create_schema() -> Schema {
     Schema::new(QueryRoot {}, juniper::EmptyMutation::<GraphQLCtx>::new())
 }
 
-/// This is mtbl executor actor. We are going to run 3 of them in parallel.
-pub struct MtblExecutor {
-    pub reader: std::sync::Arc<mtbl::Reader>,
+/// This is sled executor actor. We are going to run 3 of them in parallel.
+pub struct SledExecutor {
+    pub reader: std::sync::Arc<sled::Tree>,
     pub logger: slog::Logger,
     pub schema: std::sync::Arc<Schema>,
 }
 
-impl MtblExecutor {
-    pub fn new(reader: std::sync::Arc<mtbl::Reader>, logger: slog::Logger) -> MtblExecutor {
-        MtblExecutor {
+impl SledExecutor {
+    pub fn new(reader: std::sync::Arc<sled::Tree>, logger: slog::Logger) -> SledExecutor {
+        SledExecutor {
             reader,
             logger,
             schema: std::sync::Arc::new(create_schema()),
@@ -90,18 +89,18 @@ pub struct GetCountry {
     pub name: String,
 }
 
-type MtblResult = std::result::Result<Option<serde_cbor::value::Value>, serde_cbor::error::Error>;
+type SledResult = std::result::Result<Option<serde_cbor::value::Value>, serde_cbor::error::Error>;
 
 impl Message for GetCountry {
-    type Result = MtblResult;
+    type Result = SledResult;
 }
 
-impl Actor for MtblExecutor {
+impl Actor for SledExecutor {
     type Context = SyncContext<Self>;
 }
 
-impl Handler<GetCountry> for MtblExecutor {
-    type Result = MtblResult;
+impl Handler<GetCountry> for SledExecutor {
+    type Result = SledResult;
 
     fn handle(&mut self, msg: GetCountry, _: &mut Self::Context) -> Self::Result {
         let guard = logger::FnGuard::new(
@@ -110,8 +109,8 @@ impl Handler<GetCountry> for MtblExecutor {
             "GetCountry",
         );
         info!(guard, "retrieving country");
-        let mr = &self.reader;
-        if let Some(ref val) = mr.get(msg.name) {
+        let ctx = &GraphQLCtx(self.reader.clone(), self.logger.clone());
+        if let Some(ref val) = ctx.get(msg.name) {
             serde_cbor::from_slice(&val)
         } else {
             Ok(None)
@@ -119,10 +118,10 @@ impl Handler<GetCountry> for MtblExecutor {
     }
 }
 
-pub struct GraphQLCtx(std::sync::Arc<mtbl::Reader>, slog::Logger);
+pub struct GraphQLCtx(std::sync::Arc<sled::Tree>, slog::Logger);
 impl GraphQLCtx {
     fn get(&self, name: String) -> std::option::Option<std::vec::Vec<u8>> {
-        self.0.get(name)
+        self.0.get(name).ok()?.and_then(|val| Some(val.to_vec()))
     }
 
     fn logger(&self) -> &slog::Logger {
@@ -138,13 +137,11 @@ impl Message for GraphQLData {
     type Result = Result<String, serde_json::Error>;
 }
 
-impl Handler<GraphQLData> for MtblExecutor {
+impl Handler<GraphQLData> for SledExecutor {
     type Result = Result<String, serde_json::Error>;
 
     fn handle(&mut self, msg: GraphQLData, _: &mut Self::Context) -> Self::Result {
-        let res = msg
-            .0
-            .execute(&self.schema, &GraphQLCtx(self.reader.clone(), self.logger.clone()));
+        let res = msg.0.execute(&self.schema, &GraphQLCtx(self.reader.clone(), self.logger.clone()));
         let res_text = serde_json::to_string(&res)?;
         Ok(res_text)
     }

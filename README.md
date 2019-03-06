@@ -1,26 +1,20 @@
 # MTBL
 
-MTBL / Actix Web example using data from [github.com/mledoze/countries](https://github.com/mledoze/countries)
+Actix Web example using data from [github.com/mledoze/countries](https://github.com/mledoze/countries)
 
 ## Usage
 
-### install MTBL
-
-See [https://crates.io/crates/mtbl](https://crates.io/crates/mtbl)
-
-### init MTBL database
+### init sled database
 
 ```bash
 wget -O countries.json https://raw.githubusercontent.com/mledoze/countries/master/countries.json
-cargo build
-./target/debug/builder
+cargo run --bin builder
 ```
 
 ### server
 
 ```bash
-cargo build
-./target/debug/server
+cargo run --bin server
 ```
 
 ### web client

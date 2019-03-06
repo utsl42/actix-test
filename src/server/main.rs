@@ -9,34 +9,30 @@ use actix_web::{
 use futures;
 use futures::future::Future;
 use juniper;
-use lazy_static::lazy_static;
-use mtbl;
+use sled;
 use serde_cbor;
-use serde_yaml;
 use slog;
 use slog::Drain;
 use slog::{info, o};
 use slog_async;
 use slog_term;
-use std::sync::Arc;
-use tera::compile_templates;
 
 mod logger;
 mod mt;
 
 use crate::logger::ThreadLocalDrain;
-use crate::mt::{GetCountry, MtblExecutor};
+use crate::mt::{GetCountry, SledExecutor};
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
-/// State with MtblExecutor address
+/// State with SledExecutor address
 struct State {
-    mt: actix::Addr<MtblExecutor>,
+    mt: actix::Addr<SledExecutor>,
     logger: slog::Logger,
 }
 
-fn start_http(mt_addr: actix::Addr<MtblExecutor>, logger: slog::Logger) {
+fn start_http(mt_addr: actix::Addr<SledExecutor>, logger: slog::Logger) {
     actix_web::server::HttpServer::new(move || {
         App::with_state(State {
             mt: mt_addr.clone(),
@@ -59,14 +55,6 @@ fn start_http(mt_addr: actix::Addr<MtblExecutor>, logger: slog::Logger) {
     .bind("0.0.0.0:63333")
     .unwrap()
     .start();
-}
-
-lazy_static! {
-    pub static ref TEMPLATES: tera::Tera = {
-        let mut t = compile_templates!("templates/**/*");
-        t.autoescape_on(vec!["html"]);
-        t
-    };
 }
 
 // Async request handler
@@ -102,13 +90,8 @@ fn make_response(
     let _guard = log.sub_guard("make_response");
     let mut res = HttpResponse::Ok();
     match accept.as_str() {
-        "application/yaml" => Ok(res
-            .content_type("application/yaml")
-            .body(serde_yaml::to_string(&object).unwrap())),
         "application/json" => Ok(res.json(&object)),
-        _ => Ok(res
-            .content_type("text/html")
-            .body(TEMPLATES.render("country.html", &object).unwrap())),
+        _ => Ok(res.json(&object)),
     }
 }
 
@@ -143,7 +126,7 @@ fn graphql((st, data): (actix_web::State<State>, Json<mt::GraphQLData>)) -> Futu
         .responder()
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     //--- set up slog
 
     // set up terminal logging
@@ -172,15 +155,15 @@ fn main() {
     let async_drain = slog_async::Async::new(dup_drain.fuse()).build();
     // and add thread local logging
     let log = slog::Logger::root(ThreadLocalDrain { drain: async_drain }.fuse(), o!());
-
+    let tree = sled::Db::start_default("countries_db")?.open_tree(b"countries".to_vec())?;
     //--- end of slog setup
     actix::System::run(move || {
         // set up MTBL lookup thread
         let mt_logger = log.new(o!("thread_name"=>"mtbl"));
-        let reader = Arc::new(mtbl::Reader::open_from_path("countries.mtbl").unwrap());
+
         // Start mtbl executor actors
         let addr = SyncArbiter::start(3, move || {
-            MtblExecutor::new(reader.clone(), mt_logger.new(o!()))
+            SledExecutor::new(tree.clone(), mt_logger.new(o!()))
         });
 
         // Start http server in its own thread
@@ -191,4 +174,5 @@ fn main() {
         // handle signals
         let _ = signal::DefaultSignalsHandler::start_default();
     });
+    Ok(())
 }
