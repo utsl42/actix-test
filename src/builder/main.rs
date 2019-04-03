@@ -1,6 +1,6 @@
-use sled;
 use serde_cbor;
 use serde_json;
+use sled;
 use std::fs::File;
 use std::io;
 
@@ -15,9 +15,6 @@ fn main() -> Result<()> {
     if data.is_array() {
         let decoded: &Vec<serde_json::Value> = data.as_array().unwrap();
         for object in decoded.iter() {
-            if let Some(&serde_json::Value::String(ref name)) = object.pointer("/name/common") {
-                db.set(name, serde_cbor::to_vec(object)?)?;
-            }
             if let Some(&serde_json::Value::String(ref name)) = object.pointer("/cca3") {
                 db.set(name, serde_cbor::to_vec(object)?)?;
             }

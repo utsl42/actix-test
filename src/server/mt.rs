@@ -6,14 +6,13 @@ use juniper::http::GraphQLRequest;
 use juniper::GraphQLObject;
 use serde_cbor;
 use serde_derive::{Deserialize, Serialize};
-use slog::{info, error, o};
+use slog::{error, info, o};
 use std;
 
 use crate::logger;
 
-#[derive(GraphQLObject, Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-#[graphql(description = "A country record")]
 pub struct Country {
     name: CountryName,
     tld: Vec<String>,
@@ -32,6 +31,83 @@ pub struct Country {
     area: f64,
     flag: String,
 }
+
+juniper::graphql_object!(Country: GraphQLCtx |&self| {
+    description: "A country record"
+
+    field name() -> &CountryName {
+        &self.name
+    }
+
+    field tld() -> &Vec<String> {
+        &self.tld
+    }
+
+    field cca2() -> &str {
+        self.cca2.as_str()
+    }
+
+    field ccn3() -> &str {
+        self.ccn3.as_str()
+    }
+
+    field cca3() -> &str {
+        self.cca3.as_str()
+    }
+
+    field cioc() -> &str {
+        self.cioc.as_str()
+    }
+
+    field independent() -> bool {
+        self.independent
+    }
+
+    field currency() -> &Vec<String> {
+        &self.currency
+    }
+
+    field calling_code() -> &Vec<String> {
+        &self.calling_code
+    }
+
+    field capital() -> &Vec<String> {
+        &self.capital
+    }
+
+    field region() -> &str {
+        self.region.as_str()
+    }
+
+    field subregion() -> &str {
+        self.subregion.as_str()
+    }
+
+    field latlng() -> &Vec<f64> {
+        &self.latlng
+    }
+
+    field flag() -> &str {
+        self.flag.as_str()
+    }
+
+    field area() -> f64 {
+        self.area
+    }
+
+    field borders(&executor) -> juniper::FieldResult<Vec<Country>> {
+        let ctx = executor.context();
+        let countries: Vec<Country> = self.borders.iter()
+            .map(|c| ctx.get(c.to_string()))
+             .filter_map(|maybe| {
+                maybe.and_then( | v | {
+                    serde_cbor::from_slice(&v).ok()
+                })
+            })
+            .collect();
+        Ok(countries)
+    }
+});
 
 #[derive(GraphQLObject, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +133,19 @@ juniper::graphql_object!(QueryRoot: GraphQLCtx |&self| {
         } else {
             Ok(None)
         }
+    }
+
+    field list_countries(&executor) -> juniper::FieldResult<Vec<Country>> {
+        let ctx = executor.context();
+        let results = ctx.iter();
+        let countries: Vec<Country> = results
+             .filter_map(|maybe| {
+                maybe.ok().and_then( | (k, v) | {
+                    serde_cbor::from_slice(&v).ok()
+                })
+            })
+            .collect();
+        Ok(countries)
     }
 });
 
@@ -124,13 +213,17 @@ impl GraphQLCtx {
         self.0.get(name).ok()?.and_then(|val| Some(val.to_vec()))
     }
 
+    fn iter(&self) -> sled::Iter {
+        self.0.iter()
+    }
+
     fn logger(&self) -> &slog::Logger {
         &self.1
     }
 }
 impl juniper::Context for GraphQLCtx {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GraphQLData(GraphQLRequest);
 
 impl Message for GraphQLData {
@@ -140,8 +233,12 @@ impl Message for GraphQLData {
 impl Handler<GraphQLData> for SledExecutor {
     type Result = Result<String, serde_json::Error>;
 
-    fn handle(&mut self, msg: GraphQLData, _: &mut Self::Context) -> Self::Result {
-        let res = msg.0.execute(&self.schema, &GraphQLCtx(self.reader.clone(), self.logger.clone()));
+    fn handle(&mut self, msg: GraphQLData, ctx: &mut Self::Context) -> Self::Result {
+        let logger = self.logger.clone();
+        info!(self.logger, "{:#?}", msg);
+        let res = msg
+            .0
+            .execute(&self.schema, &GraphQLCtx(self.reader.clone(), logger));
         let res_text = serde_json::to_string(&res)?;
         Ok(res_text)
     }

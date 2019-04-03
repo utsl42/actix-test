@@ -9,8 +9,8 @@ use actix_web::{
 use futures;
 use futures::future::Future;
 use juniper;
-use sled;
 use serde_cbor;
+use sled;
 use slog;
 use slog::Drain;
 use slog::{info, o};
@@ -40,7 +40,7 @@ fn start_http(mt_addr: actix::Addr<SledExecutor>, logger: slog::Logger) {
         })
         .configure(|app| {
             Cors::for_app(app)
-                .allowed_origin("http://localhost:63333")
+                .send_wildcard()
                 .allowed_methods(vec!["GET", "POST"])
                 .allowed_header(http::header::CONTENT_TYPE)
                 .max_age(3600)
@@ -113,7 +113,9 @@ fn graphiql(_req: &HttpRequest<State>) -> Result<HttpResponse, Error> {
         .body(html))
 }
 
-fn graphql((st, data): (actix_web::State<State>, Json<mt::GraphQLData>)) -> FutureResponse<HttpResponse> {
+fn graphql(
+    (st, data): (actix_web::State<State>, Json<mt::GraphQLData>),
+) -> FutureResponse<HttpResponse> {
     st.mt
         .send(data.0)
         .from_err()
