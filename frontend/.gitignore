@@ -1,0 +1,12 @@
+.DS_Store
+.merlin
+.bsb.lock
+.vscode
+.history
+npm-debug.log
+graphql_schema.json
+.graphql_ppx_cache
+/lib/bs/
+/dist
+/src/*.bs.js
+/node_modules/
