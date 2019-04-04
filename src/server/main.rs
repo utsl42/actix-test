@@ -4,12 +4,11 @@ use actix::actors::signal;
 use actix::prelude::*;
 use actix_web::{
     http, middleware::cors::Cors, App, AsyncResponder, Error, FutureResponse, HttpRequest,
-    HttpResponse, Json,
+    HttpResponse, Json, fs,
 };
 use futures;
 use futures::future::Future;
 use juniper;
-use serde_cbor;
 use sled;
 use slog;
 use slog::Drain;
@@ -21,7 +20,7 @@ mod logger;
 mod mt;
 
 use crate::logger::ThreadLocalDrain;
-use crate::mt::{GetCountry, SledExecutor};
+use crate::mt::{SledExecutor};
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
@@ -48,62 +47,13 @@ fn start_http(mt_addr: actix::Addr<SledExecutor>, logger: slog::Logger) {
                     r.method(http::Method::POST).with(graphql);
                 })
                 .resource("/graphiql", |r| r.method(http::Method::GET).h(graphiql))
-                .resource("/{name}", |r| r.method(http::Method::GET).with_async(index))
+
                 .register()
-        })
+        }).handler("/", fs::StaticFiles::new("./frontend/dist/").unwrap().index_file("index.html"))
     })
     .bind("0.0.0.0:63333")
     .unwrap()
     .start();
-}
-
-// Async request handler
-fn index(req: HttpRequest<State>) -> impl Future<Item = HttpResponse, Error = Error> {
-    let name = &req.match_info()["name"];
-    let guard = logger::FnGuard::new(
-        req.state().logger.clone(),
-        o!("name"=>name.to_owned()),
-        "index",
-    );
-    let accept_hdr = get_accept_str(req.headers().get(http::header::ACCEPT));
-
-    req.state()
-        .mt
-        .send(GetCountry {
-            name: name.to_owned(),
-        })
-        .from_err()
-        .and_then(move |res| match res {
-            Ok(country) => match country {
-                Some(c) => make_response(guard, accept_hdr, c),
-                None => Ok(HttpResponse::NotFound().finish()),
-            },
-            Err(_) => Ok(HttpResponse::InternalServerError().finish()),
-        })
-}
-
-fn make_response(
-    log: logger::FnGuard,
-    accept: String,
-    object: serde_cbor::Value,
-) -> std::result::Result<actix_web::HttpResponse, actix_web::Error> {
-    let _guard = log.sub_guard("make_response");
-    let mut res = HttpResponse::Ok();
-    match accept.as_str() {
-        "application/json" => Ok(res.json(&object)),
-        _ => Ok(res.json(&object)),
-    }
-}
-
-fn get_accept_str(hdr: Option<&http::header::HeaderValue>) -> String {
-    let html = "text/html".to_string();
-    match hdr {
-        Some(h) => match h.to_str() {
-            Ok(st) => st.to_string(),
-            _ => html,
-        },
-        None => html,
-    }
 }
 
 fn graphiql(_req: &HttpRequest<State>) -> Result<HttpResponse, Error> {

@@ -233,7 +233,7 @@ impl Message for GraphQLData {
 impl Handler<GraphQLData> for SledExecutor {
     type Result = Result<String, serde_json::Error>;
 
-    fn handle(&mut self, msg: GraphQLData, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: GraphQLData, _ctx: &mut Self::Context) -> Self::Result {
         let logger = self.logger.clone();
         info!(self.logger, "{:#?}", msg);
         let res = msg
