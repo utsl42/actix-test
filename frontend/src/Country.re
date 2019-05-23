@@ -13,8 +13,6 @@ type country = {
   subregion: string,
   flag: string,
   capital: array(string),
-  currency: array(string),
-  callingCode: array(string),
   tld: array(string),
   borders: Js.Array.t(borders),
 };
@@ -33,8 +31,6 @@ module GetCountry = [%graphql
       subregion
       flag
       capital
-      currency
-      callingCode
       tld
       borders @bsRecord {
         name @bsRecord {
@@ -62,11 +58,15 @@ let make = (~item: option(country), _children) => {
   ...component,
   render: self =>
     switch (item) {
-    | None => <li />
+    | None => <p> {"No such country found" |> str} </p>
     | Some(c) =>
       <div className="container">
         <div className="row">
-          <div className="col-sm-1"> <button className="primary" onClick={push("")}> {str("Back")} </button> </div>
+          <div className="col-sm-1">
+            <button className="primary" onClick={push("")}>
+              {str("Back")}
+            </button>
+          </div>
           <div className="col-sm-11"> <h2> {str(c.name.common)} </h2> </div>
         </div>
         <div className="row">
@@ -79,7 +79,9 @@ let make = (~item: option(country), _children) => {
         </div>
         <div className="row">
           <div className="col-sm-1"> {str("Capital")} </div>
-          <div className="col-sm-11"> {str(Js.Array.joinWith(",", c.capital))} </div>
+          <div className="col-sm-11">
+            {str(Js.Array.joinWith(",", c.capital))}
+          </div>
         </div>
         <div className="row">
           <div className="col-sm-1"> {str("Region")} </div>
@@ -100,7 +102,9 @@ let make = (~item: option(country), _children) => {
               {
                 c.borders
                 |> Array.map((item: borders) =>
-                     <li key={item.cca3} onClick={push(item.cca3)}> {item.name.common |> str} </li>
+                     <li key={item.cca3} onClick={push(item.cca3)}>
+                       {item.name.common |> str}
+                     </li>
                    )
                 |> ReasonReact.array
               }

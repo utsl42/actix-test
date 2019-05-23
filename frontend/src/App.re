@@ -15,24 +15,41 @@ type action =
 
 let component = ReasonReact.reducerComponent("App");
 
+/* Map a urlhash to an action. With this, we can convert browser navigation into reducer actions. */
+let urlhash2action = (hash, view) =>
+  switch (hash, view) {
+  | ("", _) => ShowList /* default to list view */
+  | (country, _) => ShowCountry(country)
+  };
+
+/* Map an action to a view we want to switch to. */
+let action2view = action =>
+  switch (action) {
+  | ShowCountry(country) => ViewCountry(country)
+  | ShowList => ViewList
+  };
+
 let make = _children => {
   ...component,
-  initialState: () => {view: ViewList},
+  initialState: () => {
+    view:
+      /* retrieve the initial view from the url hash */
+      action2view(
+        urlhash2action(
+          ReasonReact.Router.dangerouslyGetInitialUrl().hash,
+          ViewList,
+        ),
+      ),
+  },
   didMount: self => {
     let watcherID =
-      ReasonReact.Router.watchUrl(url =>
-        switch (url.hash, self.state.view) {
-        | ("", _) => self.send(ShowList)
-        | (country, _) => self.send(ShowCountry(country))
-        }
-      );
+      ReasonReact.Router.watchUrl(url
+        /* update view on url change */
+        => self.send(urlhash2action(url.hash, self.state.view)));
     self.onUnmount(() => ReasonReact.Router.unwatchUrl(watcherID));
   },
   reducer: (action, _state) =>
-    switch (action) {
-    | ShowCountry(country) => ReasonReact.Update({view: ViewCountry(country)})
-    | ShowList => ReasonReact.Update({view: ViewList})
-    },
+    ReasonReact.Update({view: action2view(action)}),
   render: self =>
     <div>
       <h1> {"ReasonReact + GraphQL Countries" |> str} </h1>
