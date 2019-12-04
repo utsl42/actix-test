@@ -1,10 +1,8 @@
 //! Actix web mtbl example
 
-use actix::prelude::*;
-use actix_web::{http, middleware::cors::Cors, App, Error, HttpRequest, HttpResponse};
+use actix_web::{http, App, Error, HttpRequest, HttpResponse};
+use actix_cors::Cors;
 use actix_files as fs;
-use futures;
-use futures::future::Future;
 use juniper;
 use sled;
 use slog;
@@ -14,6 +12,9 @@ use slog_async;
 use slog_term;
 use std::fs::File;
 use std::io;
+use std::sync::Arc;
+use futures::future::Future;
+use futures::future::TryFutureExt;
 
 mod gql;
 mod logger;
@@ -21,42 +22,17 @@ mod mt;
 
 use crate::logger::ThreadLocalDrain;
 use crate::mt::SledExecutor;
+use actix_web::error::ErrorBadGateway;
 
 // make git sha available in the program
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
 /// State with SledExecutor address
 struct State {
-    mt: actix::Addr<SledExecutor>,
+    mt: Arc<SledExecutor>,
     logger: slog::Logger,
 }
 
-fn start_http(mt_addr: actix::Addr<SledExecutor>, logger: slog::Logger) {
-    actix_web::HttpServer::new(move || {
-        let cors = Cors::new()
-            .send_wildcard()
-            .allowed_methods(vec!["GET", "POST"])
-            .allowed_header(http::header::CONTENT_TYPE)
-            .max_age(3600);
-
-        App::new()
-            .data(State {
-                mt: mt_addr.clone(),
-                logger: logger.clone(),
-            })
-            .wrap(cors)
-            .route("/graphql", actix_web::web::post().to_async(graphql))
-            .route("/graphiql", actix_web::web::get().to(graphiql))
-            .route("/playground", actix_web::web::get().to(playground))
-            .service(
-                fs::Files::new("/", "./frontend/dist/")
-                    .index_file("index.html"),
-            )
-    })
-    .bind("0.0.0.0:63333")
-    .unwrap()
-    .start();
-}
 
 fn graphiql(req: HttpRequest) -> HttpResponse {
     let html = juniper::graphiql::graphiql_source("http://localhost:63333/graphql");
@@ -72,19 +48,14 @@ fn playground(req: HttpRequest) -> HttpResponse {
         .body(html)
 }
 
-fn graphql((st, data): (actix_web::web::Data<State>, actix_web::web::Json<gql::GraphQLData>)) -> impl Future<Item=HttpResponse, Error=Error> {
-    st.mt
-        .send(data.0)
-        .from_err()
-        .and_then(|res| match res {
-            Ok(user) => Ok(HttpResponse::Ok()
-                .content_type("application/json")
-                .body(user)),
-            Err(_) => Ok(HttpResponse::InternalServerError().into()),
-        })
+async fn graphql((st, data): (actix_web::web::Data<State>, actix_web::web::Json<gql::GraphQLData>))
+           -> std::result::Result<String, actix_web::Error> {
+    // This doesn't really seem right, but it apparently converts the Future that map_err returns back to
+    // a Result, which the async fn turns back into a Future. Hoping rustc can optimize this away...
+    actix_web::web::block(move || st.mt.handle(data.0))
+        .map_err(|e| ErrorBadGateway(e)
+        ).await
 }
-
-// Change the alias to `Box<error::Error>`.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn build_db(db: std::sync::Arc<sled::Tree>) -> Result<()> {
@@ -95,7 +66,7 @@ fn build_db(db: std::sync::Arc<sled::Tree>) -> Result<()> {
         let decoded: &Vec<serde_json::Value> = data.as_array().unwrap();
         for object in decoded.iter() {
             if let Some(&serde_json::Value::String(ref name)) = object.pointer("/cca3") {
-                db.set(name, serde_cbor::to_vec(object)?)?;
+                db.insert(name, serde_cbor::to_vec(object)?)?;
             }
         }
     }
@@ -103,7 +74,8 @@ fn build_db(db: std::sync::Arc<sled::Tree>) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[actix_rt::main]
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     //--- set up slog
 
     // set up terminal logging
@@ -135,7 +107,7 @@ fn main() -> Result<()> {
     //--- end of slog setup
 
     //--- set up sled database
-    let tree = sled::Db::start_default("countries_db")?.open_tree(b"countries".to_vec())?;
+    let tree = Arc::from(sled::Db::open("countries_db")?.open_tree(b"countries".to_vec())?);
 
     // dump the graphql schema, which needs the database because of the graphql context
     gql::dump_schema(&gql::create_schema(), tree.clone(), log.clone())?;
@@ -156,22 +128,35 @@ fn main() -> Result<()> {
     }
     // --- end of database setup
 
-    actix::System::run(move || {
-        // set up MTBL lookup thread
-        let mt_logger = log.new(o!("thread_name"=>"sled"));
+    let mt_logger = log.new(o!("thread_name"=>"sled"));
+    let http_logger = log.new(o!("thread_name"=>"http"));
 
-        // Start sled executor actors
-        let addr = SyncArbiter::start(3, move || {
-            SledExecutor::new(tree.clone(), mt_logger.new(o!()))
-        });
+    actix_web::HttpServer::new(move || {
+        let cors = Cors::new()
+            .send_wildcard()
+            .allowed_methods(vec!["GET", "POST"])
+            .allowed_header(http::header::CONTENT_TYPE)
+            .max_age(3600)
+            .finish();
 
-        // Start http server in its own thread
-        let http_logger = log.new(o!("thread_name"=>"http"));
-        start_http(addr, http_logger);
-        info!(log, "Started http server");
-
-        // handle signals
-//        let _ = signal::DefaultSignalsHandler::start_default();
-    });
+        App::new()
+            .data(State {
+                mt: Arc::from(SledExecutor::new(tree.clone(), mt_logger.new(o!()))),
+                logger: http_logger.clone(),
+            })
+            .wrap(cors)
+            .route("/graphql", actix_web::web::post().to(graphql))
+            .route("/graphiql", actix_web::web::get().to(graphiql))
+            .route("/playground", actix_web::web::get().to(playground))
+            .service(
+                fs::Files::new("/", "./frontend/dist/")
+                    .index_file("index.html"),
+            )
+    })
+        .bind("0.0.0.0:63333")?
+        .workers(1)
+        .start()
+        .await?;
+    info!(log, "Started http server");
     Ok(())
 }

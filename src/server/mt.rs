@@ -1,7 +1,6 @@
 //! sled executor actor
 
 use crate::gql;
-use actix::prelude::*;
 use slog::info;
 use std;
 
@@ -12,6 +11,7 @@ pub struct SledExecutor {
     pub schema: std::sync::Arc<gql::Schema>,
 }
 
+
 impl SledExecutor {
     pub fn new(reader: std::sync::Arc<sled::Tree>, logger: slog::Logger) -> SledExecutor {
         SledExecutor {
@@ -20,20 +20,8 @@ impl SledExecutor {
             schema: std::sync::Arc::new(gql::create_schema()),
         }
     }
-}
 
-impl Actor for SledExecutor {
-    type Context = SyncContext<Self>;
-}
-
-impl Message for gql::GraphQLData {
-    type Result = Result<String, serde_json::Error>;
-}
-
-impl Handler<gql::GraphQLData> for SledExecutor {
-    type Result = Result<String, serde_json::Error>;
-
-    fn handle(&mut self, msg: gql::GraphQLData, _ctx: &mut Self::Context) -> Self::Result {
+    pub fn handle(&self, msg: gql::GraphQLData) -> std::result::Result<String, serde_json::Error> {
         let logger = self.logger.clone();
         info!(self.logger, "{:#?}", msg);
         let res = msg

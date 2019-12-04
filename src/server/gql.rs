@@ -170,7 +170,7 @@ pub fn dump_schema(
     s: &Schema,
     tree: std::sync::Arc<sled::Tree>,
     logger: slog::Logger,
-) -> Result<(), Box<std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(res) = juniper::introspect(
         s,
         &GraphQLCtx(tree, logger),
