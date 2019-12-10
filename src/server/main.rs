@@ -59,7 +59,7 @@ async fn graphql((st, data): (actix_web::web::Data<State>, actix_web::web::Json<
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn build_db(db: std::sync::Arc<sled::Tree>) -> Result<()> {
-    let br = io::BufReader::new(File::open("countries.json")?);
+    let br = io::BufReader::new(File::open("/countries.json")?);
     let data: serde_json::Value = serde_json::from_reader(br)?;
 
     if data.is_array() {
@@ -83,7 +83,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let term_drain = slog_term::CompactFormat::new(decorator).build().fuse();
 
     // json log file
-    let logfile = std::fs::File::create("/tmp/actix-test.log").unwrap();
+    let logfile = std::fs::File::create("/var/tmp/actix-test.log").unwrap();
     let json_drain = slog_json::Json::new(logfile)
         .add_default_keys()
         // include source code location
@@ -107,13 +107,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     //--- end of slog setup
 
     //--- set up sled database
-    let tree = Arc::from(sled::Db::open("countries_db")?.open_tree(b"countries".to_vec())?);
-
-    // dump the graphql schema, which needs the database because of the graphql context
-    gql::dump_schema(&gql::create_schema(), tree.clone(), log.clone())?;
+    let tree = Arc::from(sled::Db::open("/var/tmp/countries_db")?.open_tree(b"countries".to_vec())?);
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
+        // dump the graphql schema, which needs the database because of the graphql context
+        gql::dump_schema(&gql::create_schema(), tree.clone(), log.clone())?;
         return Ok(());
     }
 

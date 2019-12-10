@@ -1,12 +1,9 @@
-run: frontend/dist/index.html
-	cargo run
+build: frontend/graphql_schema.json
+	(cd frontend; npm run dist)
 
-server:
-	cargo build
+prep:
+	(cd frontend; npm install)
 
-frontend/graphql_schema.json: server
-	cargo run -- schema
-
-frontend/dist/index.html: frontend/graphql_schema.json
-	(cd frontend; npm install && npm run dist)
+frontend/graphql_schema.json:
+	./server schema
 
