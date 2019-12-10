@@ -62,42 +62,42 @@ let make = (~item: option(country), _children) => {
     | Some(c) =>
       <div className="container">
         <div className="row">
-          <div className="col-sm-1">
+          <div className="col-sm-3">
             <button className="primary" onClick={push("")}>
               {str("Back")}
             </button>
           </div>
-          <div className="col-sm-11"> <h2> {str(c.name.common)} </h2> </div>
+          <div className="col-sm-9"> <h2> {str(c.name.common)} </h2> </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Name")} </div>
-          <div className="col-sm-11"> {str(c.name.common)} </div>
+          <div className="col-sm-3"> {str("Name")} </div>
+          <div className="col-sm-9"> {str(c.name.common)} </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Official name")} </div>
-          <div className="col-sm-11"> {str(c.name.official)} </div>
+          <div className="col-sm-3"> {str("Official name")} </div>
+          <div className="col-sm-9"> {str(c.name.official)} </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Capital")} </div>
-          <div className="col-sm-11">
+          <div className="col-sm-3"> {str("Capital")} </div>
+          <div className="col-sm-9">
             {str(Js.Array.joinWith(",", c.capital))}
           </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Region")} </div>
-          <div className="col-sm-11"> {str(c.region)} </div>
+          <div className="col-sm-3"> {str("Region")} </div>
+          <div className="col-sm-9"> {str(c.region)} </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Subregion")} </div>
-          <div className="col-sm-11"> {str(c.subregion)} </div>
+          <div className="col-sm-3"> {str("Subregion")} </div>
+          <div className="col-sm-9"> {str(c.subregion)} </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Flag")} </div>
-          <div className="col-sm-11"> {str(c.flag)} </div>
+          <div className="col-sm-3"> {str("Flag")} </div>
+          <div className="col-sm-9"> {str(c.flag)} </div>
         </div>
         <div className="row">
-          <div className="col-sm-1"> {str("Borders")} </div>
-          <div className="col-sm-11">
+          <div className="col-sm-3"> {str("Borders")} </div>
+          <div className="col-sm-9">
             <ul>
               {
                 c.borders
