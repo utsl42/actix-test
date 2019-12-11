@@ -1,0 +1,6 @@
+nameSuffix: -lab
+resources:
+- ingress.yaml
+
+bases:
+- ../../base

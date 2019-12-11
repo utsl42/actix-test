@@ -1,0 +1,16 @@
+apiVersion: skaffold/v1
+kind: Config
+build:
+  artifacts:
+  - image: utsl.org/actix-test
+  local: {}
+deploy:
+  kustomize:
+    path: "deploy/overlays/lab"
+profiles:
+- name: utsl
+  activation:
+    - env: USER=utsl
+  deploy:
+    kustomize:
+      path: "deploy/overlays/utsl"

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actix
+spec:
+  selector:
+    matchLabels:
+      app: actix
+      tier: backend
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: actix
+        tier: backend
+    spec:
+      containers:
+      - name: actix
+        image: utsl.org/actix-test
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 63333

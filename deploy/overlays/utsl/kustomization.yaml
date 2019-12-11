@@ -1,0 +1,6 @@
+nameSuffix: -utsl
+namespace: utsl
+
+bases:
+- ../../base
+

@@ -1,0 +1,23 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: actix
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  labels:
+    app: actix
+spec:
+  tls:
+  - hosts:
+    - at.lab.utsl.org
+    secretName: lab-utsl-org
+  rules:
+  - host: at.lab.utsl.org
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: actix
+          servicePort: 63333
